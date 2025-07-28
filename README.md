@@ -26,7 +26,7 @@
 ### Docker 运行（推荐）
 
 ```bash
-# 拉取镜像（如果可用）
+# 拉取镜像（暂时需要自己 build）
 docker pull chenglinhku/tool_server_uni:v1.1
 
 # 或构建本地镜像
