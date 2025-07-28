@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pydantic
+gitpython
+PyPDF2
+python-docx
+python-pptx
+markdown
+python-multipart
+claude-code-sdk
+anyio
+# Google 搜索功能依赖包
+crawl4ai>=0.6.3
+googlesearch-python>=1.2.3
+requests>=2.31.0
+playwright>=1.42.0
