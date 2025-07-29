@@ -8,6 +8,7 @@ from typing import List, Optional
 from .base_tool import LocalTool
 from utils.response import ToolResponse
 from utils.logger import global_logger
+from utils.lock_decorator import require_read_access, require_write_access
 
 
 class ExecuteCodeTool(LocalTool):
@@ -18,6 +19,7 @@ class ExecuteCodeTool(LocalTool):
         self.tool_name = "execute_code"
         self.description = "执行Python代码文件"
     
+    @require_read_access('file_path')
     async def execute(self, task_id: str, workspace_path: Path, file_path: str, timeout: int = 300, **kwargs) -> ToolResponse:
         try:
             if not file_path:
@@ -215,6 +217,7 @@ class GitCloneTool(LocalTool):
         self.tool_name = "git_clone"
         self.description = "克隆Git仓库"
     
+    @require_write_access('target_dir')
     async def execute(self, task_id: str, workspace_path: Path, repo_url: str, target_dir: str = '', branch: str = None, token: str = None, **kwargs) -> ToolResponse:
         try:
             if not repo_url:
@@ -308,6 +311,7 @@ class ParseDocumentTool(LocalTool):
         self.tool_name = "parse_document"
         self.description = "解析文档（PDF、Word、PPT、Markdown）"
     
+    @require_read_access('file_path')
     async def execute(self, task_id: str, workspace_path: Path, file_path: str, **kwargs) -> ToolResponse:
         try:
             if not file_path:

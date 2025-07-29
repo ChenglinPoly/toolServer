@@ -16,6 +16,10 @@ from core.task_manager import TaskManager
 from core.tool_manager import ToolManager
 from utils.response import ToolResponse, ToolRequest
 from utils.logger import global_logger
+from utils.lock_manager import LockManager
+
+# 全局服务器实例，用于工具访问
+server_instance = None
 
 
 class ToolServer:
@@ -25,6 +29,7 @@ class ToolServer:
         self.app = FastAPI(title="Tool Server", version="2.0.0")
         self.task_manager: Optional[TaskManager] = None
         self.tool_manager: Optional[ToolManager] = None
+        self.lock_manager: Optional[LockManager] = None
         self.workspace_path: Optional[Path] = None
         self.is_running = False
         
@@ -235,6 +240,17 @@ class ToolServer:
         # 初始化任务管理器
         self.task_manager = TaskManager(str(self.workspace_path))
         
+        # 初始化锁管理器
+        self.lock_manager = LockManager(self.workspace_path)
+        
+        # 设置全局锁管理器实例
+        from utils.lock_manager import set_global_lock_manager
+        set_global_lock_manager(self.lock_manager)
+        
+        # 设置全局服务器实例（在工具注册之前，让工具能够访问）
+        global server_instance
+        server_instance = self
+        
         # 初始化工具管理器
         self.tool_manager = ToolManager(self.workspace_path, proxy_base_url)
         
@@ -243,6 +259,7 @@ class ToolServer:
         
         # 设置运行状态
         self.is_running = True
+        
         global_logger.info(f"Tool Server ready on port {port}")
         global_logger.info(f"Workspace: {self.workspace_path}")
         global_logger.info(f"Available tools: {self.tool_manager.list_tools()}")

@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 from .base_tool import LocalTool
 from utils.response import ToolResponse
 from datetime import datetime
+from utils.lock_decorator import require_write_access, require_read_access, bypass_lock_check
 
 
 class FileUploadTool(LocalTool):
@@ -16,6 +17,7 @@ class FileUploadTool(LocalTool):
         self.tool_name = "file_upload"
         self.description = "上传文件到指定目录"
     
+    @require_write_access('target_path')
     async def execute(self, task_id: str, workspace_path: Path, files: List[Dict] = None, target_path: str = '', **kwargs) -> ToolResponse:
         try:
             if not files:
@@ -75,6 +77,7 @@ class FileReadTool(LocalTool):
         self.tool_name = "file_read"
         self.description = "读取文件内容"
     
+    @require_read_access('file_path')
     async def execute(self, task_id: str, workspace_path: Path, file_path: str, start_line: int = None, end_line: int = None, **kwargs) -> ToolResponse:
         try:
             if not file_path:
@@ -130,6 +133,7 @@ class FileWriteTool(LocalTool):
         self.tool_name = "file_write"
         self.description = "写入文件内容"
     
+    @require_write_access('file_path')
     async def execute(self, task_id: str, workspace_path: Path, file_path: str, content: str = '', mode: str = 'overwrite', is_base64: bool = False, **kwargs) -> ToolResponse:
         try:
             if not file_path:
@@ -176,6 +180,7 @@ class FileReplaceTool(LocalTool):
         self.tool_name = "file_replace_lines"
         self.description = "替换指定行的内容"
     
+    @require_write_access('file_path')
     async def execute(self, task_id: str, workspace_path: Path, file_path: str, start_line: int, end_line: int, new_content: str = '', is_base64: bool = False, **kwargs) -> ToolResponse:
         try:
             if not all([file_path, start_line, end_line]):
@@ -241,6 +246,7 @@ class FileDeleteTool(LocalTool):
         self.tool_name = "file_delete"
         self.description = "删除文件或目录"
     
+    @require_write_access('file_path')
     async def execute(self, task_id: str, workspace_path: Path, file_path: str, **kwargs) -> ToolResponse:
         try:
             if not file_path:
@@ -279,6 +285,7 @@ class FileMoveTool(LocalTool):
         self.tool_name = "file_move"
         self.description = "移动文件或目录"
     
+    @require_write_access('src_path', 'dest_path')
     async def execute(self, task_id: str, workspace_path: Path, src_path: str, dest_path: str, **kwargs) -> ToolResponse:
         try:
             if not all([src_path, dest_path]):
@@ -317,6 +324,7 @@ class DirCreateTool(LocalTool):
         self.tool_name = "dir_create"
         self.description = "创建目录"
     
+    @require_write_access('dir_path')
     async def execute(self, task_id: str, workspace_path: Path, dir_path: str, **kwargs) -> ToolResponse:
         try:
             if not dir_path:
@@ -346,6 +354,7 @@ class DirListTool(LocalTool):
         self.tool_name = "dir_list"
         self.description = "列出目录内容"
     
+    @require_read_access('dir_path')
     async def execute(self, task_id: str, workspace_path: Path, dir_path: str = '', recursive: bool = False, **kwargs) -> ToolResponse:
         try:
             task_path = self.get_task_path(task_id, workspace_path)
@@ -415,6 +424,7 @@ class FileSearchTool(LocalTool):
         self.tool_name = "file_search"
         self.description = "在文件中搜索特定文本内容并返回行号"
     
+    @require_read_access('file_path')
     async def execute(self, task_id: str, workspace_path: Path, file_path: str, search_text: str, case_sensitive: bool = False, **kwargs) -> ToolResponse:
         try:
             if not file_path:

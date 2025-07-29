@@ -6,6 +6,7 @@ from urllib.parse import urlparse, urlencode
 from .base_tool import LocalTool
 from utils.response import ToolResponse
 from utils.logger import global_logger
+from utils.lock_decorator import require_write_access
 
 # Google 搜索相关导入
 try:
@@ -72,6 +73,7 @@ class CrawlPageTool(LocalTool):
         self.tool_name = "crawl_page"
         self.description = "爬取指定URL的页面内容"
     
+    @require_write_access('output_dir')
     async def execute(self, task_id: str, workspace_path: Path, url: str, output_dir: str = 'crawled_content', download_images: bool = False, **kwargs) -> ToolResponse:
         try:
             if AsyncWebCrawler is None:
@@ -187,6 +189,7 @@ class GoogleScholarSearchTool(LocalTool):
         self.tool_name = "google_scholar_search"
         self.description = "搜索Google Scholar并保存结果"
     
+    @require_write_access('output_dir')
     async def execute(self, task_id: str, workspace_path: Path, query: str, output_dir: str = 'scholar_results', year_low: int = None, year_high: int = None, pages: int = 1, **kwargs) -> ToolResponse:
         try:
             if AsyncWebCrawler is None:

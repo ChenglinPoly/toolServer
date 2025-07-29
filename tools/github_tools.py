@@ -35,8 +35,8 @@ class GitHubSearchTool(LocalTool):
         }
     
     async def execute(self, task_id: str, workspace_path, query: str, 
-                     sort: str = 'stars', order: str = 'desc',
-                     per_page: int = 10, page: int = 1,
+                                       sort: str = 'stars', order: str = 'desc',
+                                       per_page: int = 10, page: int = 1,
                      token: Optional[str] = None, **kwargs) -> ToolResponse:
         """搜索 GitHub 仓库（仅基于仓库名称）
         

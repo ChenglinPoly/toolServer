@@ -11,6 +11,7 @@ from typing import List, Optional
 from .base_tool import LocalTool
 from utils.response import ToolResponse
 from utils.logger import global_logger
+from utils.lock_decorator import require_read_access, require_write_access
 
 
 class Tex2PdfTool(LocalTool):
@@ -21,6 +22,8 @@ class Tex2PdfTool(LocalTool):
         self.tool_name = "tex2pdf_convert"
         self.description = "将LaTeX文档转换为PDF"
     
+    @require_read_access('input_path')
+    @require_write_access('output_path')
     async def execute(self, task_id: str, workspace_path: Path, input_path: str, output_path: str = None, engine: str = 'pdflatex', clean_aux: bool = True, tex_filename: str = None, **kwargs) -> ToolResponse:
         try:
             if not input_path:
@@ -311,6 +314,7 @@ class CodeTaskExecuteTool(LocalTool):
         self.tool_name = "code_task_execute"
         self.description = "使用Claude Code SDK执行编程任务"
     
+    @require_write_access('workspace_dir')
     async def execute(self, task_id: str, workspace_path: Path, prompt: str, workspace_dir: str = 'claude_workspace', api_key: str = None, max_turns: int = 10, allowed_tools: List[str] = None, system_prompt: str = None, **kwargs) -> ToolResponse:
         try:
             if not prompt:
