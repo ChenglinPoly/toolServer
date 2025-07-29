@@ -4,7 +4,7 @@
 
 ## 🚀 特性
 
-- **28个工具**：文件操作、代码执行、网页爬取、GitHub集成、LaTeX编译等
+- **32个工具**：文件操作、代码执行、网页爬取、GitHub集成、LaTeX编译、文件锁管理等
 - **模块化架构**：自动工具发现，统一管理，易于扩展
 - **任务隔离**：每个任务独立的工作空间和虚拟环境
 - **双环境支持**：Docker容器化部署和本地开发运行
@@ -12,6 +12,7 @@
 - **中英文LaTeX**：支持算法包和中文PDF生成
 - **🆕 代理工具系统**：支持远程工具服务器，可跨服务操作文件
 - **🆕 跨服务文件操作**：代理工具可直接操作主服务器内部文件系统
+- **🆕 文件锁保护系统**：支持等级制文件锁定，防止意外修改和并发冲突
 - **新增功能**：文本搜索、指定LaTeX文件编译、指定目标文件夹上传
 
 ## 📦 版本信息
@@ -190,6 +191,12 @@ curl -X POST "http://localhost:8001/api/tool/execute" \
 - `dir_create` - 目录创建
 - `dir_list` - 目录列举
 
+### 🔒 文件锁管理 (4个)
+- `file_lock` - 🆕 文件锁定（支持等级制权限）
+- `file_unlock` - 🆕 文件解锁（高等级可强制解锁）
+- `list_locks` - 🆕 列出当前锁状态
+- `check_lock` - 🆕 检查文件锁状态
+
 ### 代码执行 (5个)
 - `execute_code` - Python代码执行（异步）
 - `execute_shell` - Shell命令执行（异步）
@@ -267,6 +274,17 @@ curl -X POST "http://localhost:8001/api/tool/execute" \
   -d '{"task_id": "demo", "tool_name": "generate_timestamp_file", "params": {"filename": "timestamp.txt", "target_folder": "output"}}'
 
 # 结果：文件自动保存到 /workspace/tasks/demo/output/timestamp.txt
+
+# 🆕 文件锁保护演示
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "demo", "tool_name": "file_lock", "params": {"file_path": "important.txt", "level": 3, "locker_name": "admin"}}'
+
+# 尝试写入被锁定的文件（会被阻止）
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "demo", "tool_name": "file_write", "params": {"file_path": "important.txt", "content": "unauthorized change"}}'
+# 返回: {"success": false, "error": "文件访问被拒绝: important.txt - 文件已被锁定"}
 ```
 
 ### 5. 代理服务器本地执行
@@ -488,7 +506,15 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 🎉 更新日志
 
-### v2.0 (Latest) - 🚀 重大架构升级
+### v2.1 (Latest) - 🔒 文件安全保护系统
+- 🆕 **文件锁保护系统**：支持等级制文件锁定，防止意外修改和并发冲突
+- 🆕 **智能锁检查**：所有文件操作工具自动检查锁状态，非侵入式设计
+- 🆕 **层级权限管理**：高等级用户可无条件解锁低等级，同级需要身份验证
+- 🆕 **持久化锁存储**：锁信息保存到locks.json，服务重启后保持有效
+- 🆕 **4个锁管理工具**：file_lock、file_unlock、list_locks、check_lock
+- 🔧 **向后兼容**：不使用锁功能时完全不影响原有性能和行为
+
+### v2.0 - 🚀 重大架构升级
 - 🆕 **模块化架构重构**：自动工具发现，统一管理
 - 🆕 **代理工具系统**：支持跨服务文件操作的创新功能
 - 🆕 **异步处理优化**：真正的并发，长任务不阻塞

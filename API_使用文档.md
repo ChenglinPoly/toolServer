@@ -6,7 +6,8 @@ Tool Server 是一个基于 FastAPI 的多功能工具服务器，提供文件�
 
 **服务器版本**: 2.0.0  
 **默认端口**: 8001  
-**基础URL**: `http://localhost:8001`
+**基础URL**: `http://localhost:8001`  
+**🆕 文件锁系统**: 支持等级制文件锁定保护
 
 ## 启动服务器
 
@@ -74,8 +75,8 @@ docker run -p 8001:8001 -v /Users/your-username/my-workspace:/workspace tool-ser
 {
   "success": true,
   "data": {
-    "total_count": 28,
-    "local_count": 21,
+    "total_count": 32,
+    "local_count": 25,
     "proxy_count": 7,
     "tools": {
       "file_read": {
@@ -320,6 +321,180 @@ docker run -p 8001:8001 -v /Users/your-username/my-workspace:/workspace tool-ser
 **参数**:
 - `dir_path`: 目录路径 (optional, default: ".")
 - `show_hidden`: 显示隐藏文件 (optional, default: false)
+
+### 🔒 文件锁管理工具
+
+#### 1. file_lock - 文件锁定
+锁定文件或目录，防止其他操作修改。支持等级制锁定系统。
+
+**参数**:
+- `file_path`: 要锁定的文件或目录路径 (required)
+- `level`: 锁等级，数字越大权限越高 (optional, default: 1)
+- `locker_name`: 上锁者名称 (required)
+
+**示例**:
+```json
+{
+  "task_id": "test",
+  "tool_name": "file_lock",
+  "params": {
+    "file_path": "important.txt",
+    "level": 2,
+    "locker_name": "admin"
+  }
+}
+```
+
+**返回示例**:
+```json
+{
+  "success": true,
+  "data": {
+    "file_path": "important.txt",
+    "level": 2,
+    "locker_name": "admin",
+    "locked": true,
+    "message": "成功锁定文件: tasks/test/important.txt"
+  }
+}
+```
+
+#### 2. file_unlock - 文件解锁
+解锁文件或目录。高等级可无条件解锁低等级，同等级需要提供正确的上锁者名称。
+
+**参数**:
+- `file_path`: 要解锁的文件或目录路径 (required)
+- `unlocker_name`: 解锁者名称 (required)
+- `unlocker_level`: 解锁者等级 (optional, default: 1)
+
+**示例**:
+```json
+{
+  "task_id": "test", 
+  "tool_name": "file_unlock",
+  "params": {
+    "file_path": "important.txt",
+    "unlocker_name": "admin",
+    "unlocker_level": 3
+  }
+}
+```
+
+#### 3. list_locks - 列出文件锁
+列出当前所有文件锁或特定任务的文件锁。
+
+**参数**:
+- `filter_task_id`: 可选，只显示特定任务的锁 (optional, default: 当前任务)
+- `show_all`: 是否显示所有任务的锁 (optional, default: false)
+
+**示例**:
+```json
+{
+  "task_id": "test",
+  "tool_name": "list_locks", 
+  "params": {
+    "show_all": true
+  }
+}
+```
+
+**返回示例**:
+```json
+{
+  "success": true,
+  "data": {
+    "locks": [
+      {
+        "path": "tasks/test/important.txt",
+        "level": 2,
+        "locker_name": "admin", 
+        "task_id": "test",
+        "locked_at": "2025-01-29 08:31:34",
+        "locked_at_timestamp": 1753749094.247663
+      }
+    ],
+    "count": 1,
+    "message": "找到 1 个文件锁"
+  }
+}
+```
+
+#### 4. check_lock - 检查文件锁状态
+检查特定文件或目录的锁状态。
+
+**参数**:
+- `file_path`: 要检查的文件或目录路径 (required)
+
+**示例**:
+```json
+{
+  "task_id": "test",
+  "tool_name": "check_lock",
+  "params": {
+    "file_path": "important.txt"
+  }
+}
+```
+
+**返回示例**:
+```json
+{
+  "success": true,
+  "data": {
+    "file_path": "important.txt",
+    "can_access": false,
+    "is_locked": true,
+    "lock_info": {
+      "path": "tasks/test/important.txt",
+      "level": 2,
+      "locker_name": "admin",
+      "task_id": "test",
+      "locked_at": "2025-01-29 08:31:34"
+    },
+    "message": "文件被锁定 - 锁定者: admin, 等级: 2"
+  }
+}
+```
+
+### 🔐 文件锁系统特性
+
+#### 等级制权限系统
+- **数字等级**：1、2、3...，数字越大权限越高
+- **高等级解锁**：等级3的用户可以解锁等级1、2的锁
+- **同级验证**：同等级需要提供正确的上锁者名称
+
+#### 智能锁检查
+- **自动保护**：所有文件操作工具自动检查锁状态
+- **层级保护**：父目录锁定阻止子文件操作，子文件锁定阻止父目录操作
+- **非侵入式**：不使用锁功能时完全不影响性能
+
+#### 持久化存储
+- **锁信息保存**：保存到 `workspace/locks.json`
+- **服务重启保持**：重启服务器后锁信息依然有效
+
+#### 使用场景
+```bash
+# 1. 保护重要配置文件
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "prod", "tool_name": "file_lock", "params": {"file_path": "config.json", "level": 3, "locker_name": "system_admin"}}'
+
+# 2. 防止并发修改冲突
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "dev", "tool_name": "file_lock", "params": {"file_path": "database/", "level": 2, "locker_name": "migration_script"}}'
+
+# 3. 尝试操作被锁定的文件（会被阻止）
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "prod", "tool_name": "file_write", "params": {"file_path": "config.json", "content": "new config"}}'
+# 返回: {"success": false, "error": "文件访问被拒绝: config.json - 文件已被锁定"}
+
+# 4. 高等级用户解锁
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{"task_id": "prod", "tool_name": "file_unlock", "params": {"file_path": "config.json", "unlocker_name": "super_admin", "unlocker_level": 5}}'
+```
 
 ### 代码执行工具
 
@@ -784,6 +959,44 @@ curl -X POST "http://localhost:8001/api/tool/execute" \
       "num_results": 3
     }
   }'
+
+# 6. 🆕 文件锁保护演示
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "demo",
+    "tool_name": "file_lock",
+    "params": {
+      "file_path": "hello.py",
+      "level": 2,
+      "locker_name": "developer"
+    }
+  }'
+
+# 7. 尝试修改被锁定的文件（会被阻止）
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "demo",
+    "tool_name": "file_write",
+    "params": {
+      "file_path": "hello.py",
+      "content": "print(\"This will fail due to file lock\")"
+    }
+  }'
+
+# 8. 解锁文件
+curl -X POST "http://localhost:8001/api/tool/execute" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "demo",
+    "tool_name": "file_unlock",
+    "params": {
+      "file_path": "hello.py",
+      "unlocker_name": "developer",
+      "unlocker_level": 2
+    }
+  }'
 ```
 
 ## 注意事项
@@ -794,6 +1007,7 @@ curl -X POST "http://localhost:8001/api/tool/execute" \
 4. **超时设置**: 长时间运行的工具建议设置合适的超时时间
 5. **代理服务**: 代理工具需要代理服务器运行在指定地址
 6. **权限控制**: 确保服务器对工作目录有读写权限
+7. **🆕 文件锁保护**: 重要文件可使用锁系统防止意外修改，记住解锁所需的名称和等级，保证多层并行 agent 的执行安全
 
 ## 环境要求
 
