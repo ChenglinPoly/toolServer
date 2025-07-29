@@ -77,7 +77,7 @@ python my_proxy_server.py --port 8892
 
 *自动检测：Docker环境使用`/workspace`，本地环境使用`./workspace`
 
-## 🌐 代理工具系统 - 核心创新
+## 🌐 代理工具系统
 
 ### 💡 设计思路
 
