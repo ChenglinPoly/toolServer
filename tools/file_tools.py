@@ -1,12 +1,86 @@
 import os
 import base64
 import shutil
+import chardet
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 from .base_tool import LocalTool
 from utils.response import ToolResponse
 from datetime import datetime
 from utils.lock_decorator import require_write_access, require_read_access, bypass_lock_check
+
+
+def detect_file_encoding(file_path: Path) -> Tuple[str, float]:
+    """
+    检测文件编码格式
+    Returns: (encoding, confidence)
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            raw_data = f.read(10240)  # 读取前10KB用于检测
+        
+        result = chardet.detect(raw_data)
+        encoding = result.get('encoding', 'utf-8')
+        confidence = result.get('confidence', 0.0)
+        
+        # 对常见的中文编码进行优化判断
+        if encoding and encoding.lower() in ['gb2312', 'gbk', 'gb18030']:
+            # 尝试用检测到的编码解码，如果成功且包含中文字符，则确认
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    test_content = f.read(1024)
+                # 检查是否包含中文字符
+                if any('\u4e00' <= char <= '\u9fff' for char in test_content):
+                    return encoding, min(confidence + 0.1, 1.0)  # 提高中文编码的置信度
+            except (UnicodeDecodeError, UnicodeError):
+                pass
+        
+        return encoding or 'utf-8', confidence
+        
+    except Exception:
+        return 'utf-8', 0.0
+
+
+def read_file_with_encoding(file_path: Path, preferred_encoding: Optional[str] = None) -> Tuple[str, str]:
+    """
+    使用自动编码检测读取文件
+    Returns: (content, actual_encoding)
+    """
+    encodings_to_try = []
+    
+    # 如果指定了首选编码，先尝试
+    if preferred_encoding:
+        encodings_to_try.append(preferred_encoding)
+    
+    # 自动检测编码
+    detected_encoding, confidence = detect_file_encoding(file_path)
+    if detected_encoding and detected_encoding not in encodings_to_try:
+        encodings_to_try.append(detected_encoding)
+    
+    # 常见的中文编码回退列表
+    fallback_encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'utf-16', 'latin1']
+    for enc in fallback_encodings:
+        if enc not in encodings_to_try:
+            encodings_to_try.append(enc)
+    
+    # 尝试各种编码
+    for encoding in encodings_to_try:
+        try:
+            with open(file_path, 'r', encoding=encoding) as f:
+                content = f.read()
+            return content, encoding
+        except (UnicodeDecodeError, UnicodeError, LookupError):
+            continue
+    
+    # 如果所有编码都失败，使用二进制模式读取并尝试解码
+    try:
+        with open(file_path, 'rb') as f:
+            raw_data = f.read()
+        # 尝试用utf-8解码，忽略错误
+        content = raw_data.decode('utf-8', errors='replace')
+        return content, 'utf-8 (with errors replaced)'
+    except Exception as e:
+        raise Exception(f"无法读取文件，所有编码尝试都失败: {str(e)}")
 
 
 class FileUploadTool(LocalTool):
@@ -70,15 +144,15 @@ class FileUploadTool(LocalTool):
 
 
 class FileReadTool(LocalTool):
-    """文件读取工具"""
+    """文件读取工具 - 支持自动编码检测"""
     
     def __init__(self):
         super().__init__()
         self.tool_name = "file_read"
-        self.description = "读取文件内容"
+        self.description = "读取文件内容，支持自动编码检测"
     
     @require_read_access('file_path')
-    async def execute(self, task_id: str, workspace_path: Path, file_path: str, start_line: int = None, end_line: int = None, **kwargs) -> ToolResponse:
+    async def execute(self, task_id: str, workspace_path: Path, file_path: str, start_line: int = None, end_line: int = None, encoding: str = None, **kwargs) -> ToolResponse:
         try:
             if not file_path:
                 return ToolResponse(success=False, error="file_path is required")
@@ -92,13 +166,17 @@ class FileReadTool(LocalTool):
             if not full_path.is_file():
                 return ToolResponse(success=False, error=f"Not a file: {file_path}")
             
-            with open(full_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+            # 使用自动编码检测读取文件
+            try:
+                content, actual_encoding = read_file_with_encoding(full_path, encoding)
+                lines = content.splitlines(keepends=True)
+            except Exception as e:
+                return ToolResponse(success=False, error=f"读取文件失败: {str(e)}")
             
             total_lines = len(lines)
             
             if start_line is None and end_line is None:
-                content = ''.join(lines)
+                final_content = content
                 line_range = f"1-{total_lines}"
             else:
                 start_idx = (start_line - 1) if start_line else 0
@@ -107,17 +185,19 @@ class FileReadTool(LocalTool):
                 start_idx = max(0, min(start_idx, total_lines - 1))
                 end_idx = max(start_idx + 1, min(end_idx, total_lines))
                 
-                content = ''.join(lines[start_idx:end_idx])
+                final_content = ''.join(lines[start_idx:end_idx])
                 line_range = f"{start_idx + 1}-{end_idx}"
             
             return ToolResponse(
                 success=True,
                 data={
-                    "content": content,
+                    "content": final_content,
                     "total_lines": total_lines,
                     "line_range": line_range,
                     "file_path": file_path,
-                    "container_path": str(full_path)
+                    "container_path": str(full_path),
+                    "detected_encoding": actual_encoding,
+                    "file_size": full_path.stat().st_size
                 }
             )
             
@@ -126,15 +206,15 @@ class FileReadTool(LocalTool):
 
 
 class FileWriteTool(LocalTool):
-    """文件写入工具"""
+    """文件写入工具 - 支持编码指定"""
     
     def __init__(self):
         super().__init__()
         self.tool_name = "file_write"
-        self.description = "写入文件内容"
+        self.description = "写入文件内容，支持指定编码格式"
     
     @require_write_access('file_path')
-    async def execute(self, task_id: str, workspace_path: Path, file_path: str, content: str = '', mode: str = 'overwrite', is_base64: bool = False, **kwargs) -> ToolResponse:
+    async def execute(self, task_id: str, workspace_path: Path, file_path: str, content: str = '', mode: str = 'overwrite', is_base64: bool = False, encoding: str = 'utf-8', **kwargs) -> ToolResponse:
         try:
             if not file_path:
                 return ToolResponse(success=False, error="file_path is required")
@@ -146,14 +226,17 @@ class FileWriteTool(LocalTool):
             
             if is_base64:
                 try:
-                    content = base64.b64decode(content).decode('utf-8')
+                    content = base64.b64decode(content).decode(encoding)
                 except Exception as e:
                     return ToolResponse(success=False, error=f"Base64 decode error: {str(e)}")
             
             write_mode = 'w' if mode == 'overwrite' else 'a'
             
-            with open(full_path, write_mode, encoding='utf-8') as f:
-                f.write(content)
+            try:
+                with open(full_path, write_mode, encoding=encoding) as f:
+                    f.write(content)
+            except UnicodeEncodeError as e:
+                return ToolResponse(success=False, error=f"编码错误 ({encoding}): {str(e)}。建议使用 utf-8 编码。")
             
             file_stat = os.stat(full_path)
             
@@ -164,7 +247,8 @@ class FileWriteTool(LocalTool):
                     "mode": mode,
                     "size": file_stat.st_size,
                     "container_path": str(full_path),
-                    "was_base64": is_base64
+                    "was_base64": is_base64,
+                    "encoding_used": encoding
                 }
             )
             
@@ -173,15 +257,15 @@ class FileWriteTool(LocalTool):
 
 
 class FileReplaceTool(LocalTool):
-    """文件行替换工具"""
+    """文件行替换工具 - 支持编码检测"""
     
     def __init__(self):
         super().__init__()
         self.tool_name = "file_replace_lines"
-        self.description = "替换指定行的内容"
+        self.description = "替换指定行的内容，支持自动编码检测"
     
     @require_write_access('file_path')
-    async def execute(self, task_id: str, workspace_path: Path, file_path: str, start_line: int, end_line: int, new_content: str = '', is_base64: bool = False, **kwargs) -> ToolResponse:
+    async def execute(self, task_id: str, workspace_path: Path, file_path: str, start_line: int, end_line: int, new_content: str = '', is_base64: bool = False, encoding: str = None, **kwargs) -> ToolResponse:
         try:
             if not all([file_path, start_line, end_line]):
                 return ToolResponse(
@@ -201,8 +285,12 @@ class FileReplaceTool(LocalTool):
                 except Exception as e:
                     return ToolResponse(success=False, error=f"Failed to decode base64: {str(e)}")
             
-            with open(full_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+            # 使用自动编码检测读取文件
+            try:
+                content, actual_encoding = read_file_with_encoding(full_path, encoding)
+                lines = content.splitlines(keepends=True)
+            except Exception as e:
+                return ToolResponse(success=False, error=f"读取文件失败: {str(e)}")
             
             total_lines = len(lines)
             start_idx = start_line - 1
@@ -220,8 +308,17 @@ class FileReplaceTool(LocalTool):
             
             lines[start_idx:end_idx] = new_lines
             
-            with open(full_path, 'w', encoding='utf-8') as f:
-                f.writelines(lines)
+            # 使用原文件的编码写回（如果检测成功的话）
+            write_encoding = actual_encoding if actual_encoding and 'with errors' not in actual_encoding else 'utf-8'
+            
+            try:
+                with open(full_path, 'w', encoding=write_encoding) as f:
+                    f.writelines(lines)
+            except UnicodeEncodeError:
+                # 如果原编码写入失败，回退到utf-8
+                with open(full_path, 'w', encoding='utf-8') as f:
+                    f.writelines(lines)
+                write_encoding = 'utf-8'
             
             return ToolResponse(
                 success=True,
@@ -230,7 +327,9 @@ class FileReplaceTool(LocalTool):
                     "replaced_lines": f"{start_line}-{end_line}",
                     "new_line_count": len(new_lines),
                     "total_lines": len(lines),
-                    "was_base64": is_base64
+                    "was_base64": is_base64,
+                    "original_encoding": actual_encoding,
+                    "write_encoding": write_encoding
                 }
             )
             
@@ -417,15 +516,15 @@ class DirListTool(LocalTool):
 
 
 class FileSearchTool(LocalTool):
-    """文本搜索工具"""
+    """文本搜索工具 - 支持编码检测"""
     
     def __init__(self):
         super().__init__()
         self.tool_name = "file_search"
-        self.description = "在文件中搜索特定文本内容并返回行号"
+        self.description = "在文件中搜索特定文本内容并返回行号，支持自动编码检测"
     
     @require_read_access('file_path')
-    async def execute(self, task_id: str, workspace_path: Path, file_path: str, search_text: str, case_sensitive: bool = False, **kwargs) -> ToolResponse:
+    async def execute(self, task_id: str, workspace_path: Path, file_path: str, search_text: str, case_sensitive: bool = False, encoding: str = None, **kwargs) -> ToolResponse:
         try:
             if not file_path:
                 return ToolResponse(success=False, error="file_path is required")
@@ -443,8 +542,9 @@ class FileSearchTool(LocalTool):
                 return ToolResponse(success=False, error=f"Not a file: {file_path}")
             
             try:
-                with open(full_path, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
+                # 使用自动编码检测读取文件
+                content, actual_encoding = read_file_with_encoding(full_path, encoding)
+                lines = content.splitlines()
                 
                 # 搜索匹配的行
                 matches = []
@@ -467,12 +567,13 @@ class FileSearchTool(LocalTool):
                         "case_sensitive": case_sensitive,
                         "total_matches": len(matches),
                         "total_lines": len(lines),
-                        "matches": matches
+                        "matches": matches,
+                        "detected_encoding": actual_encoding
                     }
                 )
                 
-            except UnicodeDecodeError:
-                return ToolResponse(success=False, error=f"Cannot read file as text: {file_path}")
+            except Exception as e:
+                return ToolResponse(success=False, error=f"读取或搜索文件失败: {str(e)}")
             
         except Exception as e:
             return ToolResponse(success=False, error=str(e))

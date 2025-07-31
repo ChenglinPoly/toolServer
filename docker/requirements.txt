@@ -9,8 +9,10 @@ markdown
 python-multipart
 claude-code-sdk
 anyio
+chardet>=5.0.0
 # Google 搜索功能依赖包
 crawl4ai>=0.6.3
 googlesearch-python>=1.2.3
 requests>=2.31.0
 playwright>=1.42.0
+httpx
