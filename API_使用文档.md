@@ -97,12 +97,8 @@ docker run -p 8001:8001 -v /Users/your-username/my-workspace:/workspace tool-ser
 创建新任务。
 
 **请求参数**:
-```json
-{
-  "task_id": "my_task_001",
-  "task_name": "我的任务",
-  "requirements": "任务描述（可选）"
-}
+使用 Get
+http://localhost:8001/api/task/create?task_id=my_task_001&task_name=我的任务
 ```
 
 **响应示例**:
