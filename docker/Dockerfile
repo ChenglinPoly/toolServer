@@ -48,7 +48,12 @@ COPY docker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 安装 Playwright 浏览器和系统依赖
-RUN python -m playwright install-deps chromium
+RUN apt-get update && apt-get install -y \
+    fonts-unifont \
+    fonts-liberation \
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+RUN python -m playwright install-deps chromium || true
 RUN python -m playwright install chromium
 
 # 复制服务器代码和相关模块

@@ -17,6 +17,7 @@ from core.tool_manager import ToolManager
 from utils.response import ToolResponse, ToolRequest
 from utils.logger import global_logger
 from utils.lock_manager import LockManager
+from utils.human_task_manager import HumanTaskManager
 
 # 全局服务器实例，用于工具访问
 server_instance = None
@@ -30,6 +31,7 @@ class ToolServer:
         self.task_manager: Optional[TaskManager] = None
         self.tool_manager: Optional[ToolManager] = None
         self.lock_manager: Optional[LockManager] = None
+        self.human_task_manager: Optional[HumanTaskManager] = None
         self.workspace_path: Optional[Path] = None
         self.is_running = False
         
@@ -94,11 +96,14 @@ class ToolServer:
                 
                 # 记录日志
                 if result.success:
+                    # 检查是否为静默模式
+                    silent_mode = request.params.get('silent', False)
                     task_info.logger.log_tool_success(
                         request.tool_name, 
                         result.data or {}, 
                         result.execution_time, 
-                        request.params
+                        request.params,
+                        silent=silent_mode
                     )
                 else:
                     task_info.logger.log_tool_error(
@@ -191,6 +196,117 @@ class ToolServer:
         async def health_check():
             """健康检查"""
             return {"status": "healthy", "service": "tool_server", "version": "2.0.0"}
+        
+        @self.app.get("/api/human-tasks/{task_id}")
+        async def get_human_tasks(task_id: str):
+            """获取指定任务下的所有人类任务"""
+            try:
+                if not self.human_task_manager:
+                    raise HTTPException(status_code=500, detail="Human task manager not initialized")
+                
+                human_tasks = self.human_task_manager.get_human_tasks(task_id)
+                
+                # 转换为字典格式
+                tasks_data = []
+                for task in human_tasks:
+                    tasks_data.append({
+                        "human_task_id": task.human_task_id,
+                        "task_id": task.task_id,
+                        "human_task": task.human_task,
+                        "completed": task.completed,
+                        "created_at": task.created_at,
+                        "completed_at": task.completed_at,
+                        "result": task.result
+                    })
+                
+                return {
+                    "success": True, 
+                    "data": {
+                        "task_id": task_id,
+                        "human_tasks": tasks_data,
+                        "total_count": len(tasks_data)
+                    }
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.put("/api/human-tasks/{task_id}/{human_task_id}")
+        async def update_human_task_status(
+            task_id: str, 
+            human_task_id: str,
+            completed: bool,
+            result: Optional[str] = None
+        ):
+            """更新人类任务状态"""
+            try:
+                if not self.human_task_manager:
+                    raise HTTPException(status_code=500, detail="Human task manager not initialized")
+                
+                success = self.human_task_manager.update_human_task_status(
+                    task_id=task_id,
+                    human_task_id=human_task_id,
+                    completed=completed,
+                    result=result
+                )
+                
+                if not success:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Human task {human_task_id} not found in task {task_id}"
+                    )
+                
+                # 获取更新后的任务信息
+                updated_task = self.human_task_manager.get_human_task(task_id, human_task_id)
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "human_task_id": updated_task.human_task_id,
+                        "task_id": updated_task.task_id,
+                        "human_task": updated_task.human_task,
+                        "completed": updated_task.completed,
+                        "created_at": updated_task.created_at,
+                        "completed_at": updated_task.completed_at,
+                        "result": updated_task.result,
+                        "message": "人类任务状态已更新"
+                    }
+                }
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get("/api/human-tasks/{task_id}/{human_task_id}")
+        async def get_single_human_task(task_id: str, human_task_id: str):
+            """获取单个人类任务详情"""
+            try:
+                if not self.human_task_manager:
+                    raise HTTPException(status_code=500, detail="Human task manager not initialized")
+                
+                human_task = self.human_task_manager.get_human_task(task_id, human_task_id)
+                
+                if human_task is None:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Human task {human_task_id} not found in task {task_id}"
+                    )
+                
+                return {
+                    "success": True,
+                    "data": {
+                        "human_task_id": human_task.human_task_id,
+                        "task_id": human_task.task_id,
+                        "human_task": human_task.human_task,
+                        "completed": human_task.completed,
+                        "created_at": human_task.created_at,
+                        "completed_at": human_task.completed_at,
+                        "result": human_task.result
+                    }
+                }
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
     
     def _register_exception_handlers(self):
         """注册异常处理器"""
@@ -246,6 +362,9 @@ class ToolServer:
         # 设置全局锁管理器实例
         from utils.lock_manager import set_global_lock_manager
         set_global_lock_manager(self.lock_manager)
+        
+        # 初始化人类任务管理器
+        self.human_task_manager = HumanTaskManager(self.workspace_path)
         
         # 设置全局服务器实例（在工具注册之前，让工具能够访问）
         global server_instance

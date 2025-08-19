@@ -113,9 +113,15 @@ class TaskLogger:
         self.detail_logger.info(f"Tool {tool_name} started")
         self.detail_logger.debug(f"Parameters: {params}")
     
-    def log_tool_success(self, tool_name: str, result: Dict[str, Any], execution_time: float, params: Dict[str, Any] = None):
+    def log_tool_success(self, tool_name: str, result: Dict[str, Any], execution_time: float, params: Dict[str, Any] = None, silent: bool = False):
         """记录工具执行成功"""
-        # 进程日志：包含参数和结果摘要
+        # 检查是否为静默模式（主要针对前端日志查看请求）
+        if silent or (params and params.get('silent', False)):
+            # 静默模式：只记录简化日志
+            self.detail_logger.debug(f"Tool {tool_name} executed silently in {execution_time:.3f}s")
+            return
+            
+        # 正常模式：进程日志包含参数和结果摘要
         params_summary = self._format_params_summary(params) if params else ""
         result_summary = self._format_result_summary(result)
         self.process_logger.info(f"[SUCCESS] {tool_name} ({execution_time:.3f}s){params_summary}{result_summary}")

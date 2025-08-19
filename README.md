@@ -3,7 +3,16 @@
 一个基于 FastAPI 的多功能工具服务器，提供文件操作、代码执行、网页爬取、文档处理、版本控制等功能。支持本地工具和远程代理工具的统一管理。
 ## 🎉 更新日志
 
-### v2.1 (Latest) - 🔒 文件安全保护系统
+### v2.2 (Latest) - 👤 人机交互系统
+- 🆕 **Human-in-Loop功能**：支持人工干预的工作流程，创建人类任务并等待完成
+- 🆕 **人类任务管理API**：完整的任务创建、查询、状态更新API
+- 🆕 **前端管理界面**：简洁的Web界面，支持任务管理、文件上传、日志监控
+- 🆕 **静默日志功能**：前端日志查看不产生冗余服务器日志
+- 🆕 **独立部署支持**：前端界面完全解耦，可部署到任何静态服务器
+- 🔧 **文件上传优化**：修复路径处理问题，支持正确的文件上传
+- 🔧 **Docker镜像v1.2**：包含所有新功能的完整镜像
+
+### v2.1 - 🔒 文件安全保护系统
 - 🆕 **文件锁保护系统**：支持等级制文件锁定，防止意外修改和并发冲突
 - 🆕 **智能锁检查**：所有文件操作工具自动检查锁状态，非侵入式设计
 - 🆕 **层级权限管理**：高等级用户可无条件解锁低等级，同级需要身份验证
@@ -38,7 +47,7 @@
 
 ## 🚀 特性
 
-- **32个工具**：文件操作、代码执行、网页爬取、GitHub集成、LaTeX编译、文件锁管理等
+- **27个工具**：文件操作、代码执行、网页爬取、GitHub集成、LaTeX编译、文件锁管理、人机交互等
 - **模块化架构**：自动工具发现，统一管理，易于扩展
 - **任务隔离**：每个任务独立的工作空间和虚拟环境
 - **双环境支持**：Docker容器化部署和本地开发运行
@@ -47,32 +56,34 @@
 - **🆕 代理工具系统**：支持远程工具服务器，可跨服务操作文件
 - **🆕 跨服务文件操作**：代理工具可直接操作主服务器内部文件系统
 - **🆕 文件锁保护系统**：支持等级制文件锁定，防止意外修改和并发冲突
-- **新增功能**：文本搜索、指定LaTeX文件编译、指定目标文件夹上传
+- **🆕 人机交互系统**：支持人工干预的工作流程，完整的前端管理界面
+- **新增功能**：文本搜索、指定LaTeX文件编译、指定目标文件夹上传、静默日志
 
 ## 📦 版本信息
 
 - **服务器版本**: 2.0.0
-- **Docker镜像**: `tool_server_uni:v1.1`
+- **Docker镜像**: `tool_server_uni:v1.2`
 - **默认端口**: 8001
 - **代理端口**: 8892 (默认)
+- **前端界面**: 独立部署，支持任意静态服务器
 
 ## 🛠️ 快速开始
 
 ### Docker 运行（推荐）
 
 ```bash
-# 拉取镜像（暂时需要自己 build）
-docker pull chenglinhku/tool_server_uni:v1.1
+# 构建最新镜像
+docker build -f docker/Dockerfile -t tool_server_uni:v1.2 .
 
-# 或构建本地镜像
-docker build -f docker/Dockerfile -t tool_server_uni:v1.1 .
+# 启动容器（基本模式）
+docker run -d -p 8001:8001 -v $(pwd)/workspace:/workspace tool_server_uni:v1.2
 
 # 启动容器（连接代理服务器）
-docker run -d -p 8001:8001 -v $(pwd)/workspace:/workspace tool_server_uni:v1.1 \
+docker run -d -p 8001:8001 -v $(pwd)/workspace:/workspace tool_server_uni:v1.2 \
   python -m core.server --proxy-url http://host.docker.internal:8892
 
 # 或指定自定义工作空间和代理
-docker run -d -p 8001:8001 -v /your/workspace:/workspace tool_server_uni:v1.1 \
+docker run -d -p 8001:8001 -v /your/workspace:/workspace tool_server_uni:v1.2 \
   python -m core.server --proxy-url http://your-proxy:8892
 ```
 
@@ -251,6 +262,9 @@ curl -X POST "http://localhost:8001/api/tool/execute" \
 - `tex2pdf_convert` - 🆕 LaTeX转PDF（支持中文、指定文件名）
 - `code_task_execute` - Claude Code SDK集成
 
+### 人机交互工具 (1个)
+- `human_in_loop` - 🆕 创建人类任务并等待完成，支持工作流程中的人工干预
+
 ### 代理工具 (7个示例)
 - `example_hello` - 简单问候工具
 - `example_calculator` - 计算工具
@@ -264,9 +278,9 @@ curl -X POST "http://localhost:8001/api/tool/execute" \
 
 ## 🎯 API 使用示例
 
-### 1. 创建任务
+### 1. 创建任务必须先创建任务才能执行 tool
 ```bash
-curl -X POST "http://localhost:8001/api/task/create?task_id=demo&task_name=Demo_Task"
+curl -X GET "http://localhost:8001/api/task/create?task_id=demo&task_name=Demo_Task"
 ```
 
 ### 2. 文件操作
@@ -531,9 +545,38 @@ except Exception as e:
 
 MIT License - 详见 [LICENSE](LICENSE) 文件
 
+## 🌐 前端管理界面
+
+Tool Server v2.2 提供了一个简洁的Web管理界面：
+
+### 功能特性
+- **任务管理**: 查看所有任务，点击选择当前任务
+- **文件上传**: 一键上传文件到任务的upload目录
+- **日志监控**: 实时查看任务执行日志，支持彩色高亮
+- **人机交互**: 查看和管理人类任务，一键完成任务
+
+### 快速启动
+```bash
+# 方式1: 直接在浏览器中打开
+open frontend/index.html
+
+# 方式2: 启动HTTP服务器
+cd frontend && python3 -m http.server 8080
+# 然后访问 http://localhost:8080
+```
+
+### 配置说明
+- **API地址配置**: 支持URL参数、界面设置、配置文件三种方式
+- **独立部署**: 可部署到任何静态文件服务器
+- **自动刷新**: 人类任务和日志自动更新
+
+详细使用说明请参考：[frontend/README.md](frontend/README.md)
+
 ## 🔗 相关链接
 
+- [工具使用说明文档](工具使用说明文档.md) - 详细的工具API参考
 - [API 使用文档](API_使用文档.md) - 完整的API参考
+- [前端管理界面](frontend/) - Web管理界面
 - [代理服务器模板](template/) - 创建自定义代理工具
 - [Docker Hub](https://hub.docker.com/r/chenglinhku/tool_server_uni) - 预构建镜像
 - [问题反馈](https://github.com/ChenglinPoly/toolServer/issues) - Bug报告和功能请求
