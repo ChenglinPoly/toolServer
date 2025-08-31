@@ -20,7 +20,7 @@ class ExecuteCodeTool(LocalTool):
         self.description = "执行Python代码文件"
     
     @require_read_access('file_path')
-    async def execute(self, task_id: str, workspace_path: Path, file_path: str, timeout: int = 300, **kwargs) -> ToolResponse:
+    async def execute(self, task_id: str, workspace_path: Path, file_path: str, timeout: int = 3000, **kwargs) -> ToolResponse:
         try:
             if not file_path:
                 return ToolResponse(success=False, error="file_path is required")

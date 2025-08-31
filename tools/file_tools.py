@@ -166,6 +166,17 @@ class FileReadTool(LocalTool):
             if not full_path.is_file():
                 return ToolResponse(success=False, error=f"Not a file: {file_path}")
             
+            # 检查文件扩展名，禁止读取二进制文件
+            binary_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.tiff', '.webp', 
+                                '.mp3', '.mp4', '.avi', '.mov', '.wav', '.zip', '.rar', '.7z', '.tar', '.gz',
+                                '.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.db', '.sqlite', '.pkl'}
+            
+            if full_path.suffix.lower() in binary_extensions:
+                return ToolResponse(
+                    success=False, 
+                    error=f"Cannot read binary file: {file_path}. File type '{full_path.suffix}' is not supported for text reading."
+                )
+            
             # 使用自动编码检测读取文件
             try:
                 content, actual_encoding = read_file_with_encoding(full_path, encoding)
@@ -218,6 +229,9 @@ class FileWriteTool(LocalTool):
         try:
             if not file_path:
                 return ToolResponse(success=False, error="file_path is required")
+            
+            if content == '':
+                return ToolResponse(success=False, error="content cannot be empty")
             
             task_path = self.get_task_path(task_id, workspace_path)
             full_path = task_path / file_path
@@ -476,9 +490,14 @@ class DirListTool(LocalTool):
                     stat = path.stat()
                     result["size"] = stat.st_size
                 elif path.is_dir() and recursive:
-                    result["children"] = []
-                    for child in sorted(path.iterdir()):
-                        result["children"].append(build_tree(child, base_path))
+                    # 禁止递归展开code_env文件夹
+                    if path.name == "code_env":
+                        # 不添加children，阻止递归展开
+                        pass
+                    else:
+                        result["children"] = []
+                        for child in sorted(path.iterdir()):
+                            result["children"].append(build_tree(child, base_path))
                 
                 return result
             

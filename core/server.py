@@ -9,7 +9,7 @@ from typing import Dict, Optional, Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import uvicorn
 
 from core.task_manager import TaskManager
@@ -307,6 +307,45 @@ class ToolServer:
                 raise
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get("/api/download/{task_id}/{file_path:path}")
+        async def download_file(task_id: str, file_path: str):
+            """下载任务文件"""
+            try:
+                # 检查任务是否存在
+                task_info = self.task_manager.get_task(task_id)
+                
+                # 构建文件完整路径
+                task_path = Path(task_info.path)
+                full_file_path = task_path / file_path
+                
+                # 安全检查：确保文件在任务目录内
+                try:
+                    full_file_path.resolve().relative_to(task_path.resolve())
+                except ValueError:
+                    raise HTTPException(status_code=403, detail="Access denied: file outside task directory")
+                
+                # 检查文件是否存在
+                if not full_file_path.exists():
+                    raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+                
+                # 检查是否为文件（不支持下载目录）
+                if not full_file_path.is_file():
+                    raise HTTPException(status_code=400, detail=f"Cannot download directory: {file_path}")
+                
+                # 返回文件
+                return FileResponse(
+                    path=str(full_file_path),
+                    filename=full_file_path.name,
+                    media_type='application/octet-stream'
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        
+
     
     def _register_exception_handlers(self):
         """注册异常处理器"""
