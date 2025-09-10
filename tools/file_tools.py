@@ -608,3 +608,117 @@ class FileSearchTool(LocalTool):
             positions.append(pos)
             start = pos + 1
         return positions 
+
+
+class FileCopyTool(LocalTool):
+    """文件复制工具"""
+    
+    def __init__(self):
+        super().__init__()
+        self.tool_name = "file_copy"
+        self.description = "复制文件或目录到指定位置"
+    
+    @require_write_access('src_path', 'dest_path')
+    async def execute(self, task_id: str, workspace_path: Path, src_path: str, dest_path: str, **kwargs) -> ToolResponse:
+        try:
+            if not all([src_path, dest_path]):
+                return ToolResponse(
+                    success=False, 
+                    error="src_path and dest_path are required"
+                )
+            
+            task_path = self.get_task_path(task_id, workspace_path)
+            src_full = task_path / src_path
+            dest_full = task_path / dest_path
+            
+            if not src_full.exists():
+                return ToolResponse(success=False, error=f"Source not found: {src_path}")
+            
+            # 如果源是文件，则校验后缀名一致
+            if src_full.is_file():
+                if src_full.suffix != dest_full.suffix:
+                    return ToolResponse(
+                        success=False,
+                        error=f"File extension mismatch: {src_full.suffix} != {dest_full.suffix}"
+                    )
+                dest_full.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(src_full), str(dest_full))
+            else:
+                # 目录复制
+                dest_full.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(str(src_full), str(dest_full), dirs_exist_ok=True)
+            
+            return ToolResponse(
+                success=True,
+                data={
+                    "copied_from": src_path,
+                    "copied_to": dest_path
+                }
+            )
+            
+        except Exception as e:
+            return ToolResponse(success=False, error=str(e))
+        
+class FileURLDownloadTool(LocalTool):
+    """文件下载工具"""
+    
+    def __init__(self):
+        super().__init__()
+        self.tool_name = "download_file_from_url"
+        self.description = "下载文件到本地"
+    
+    @bypass_lock_check
+    async def execute(self, task_id: str, workspace_path: Path, download_url: str, save_path: str, **kwargs) -> ToolResponse:
+        try:
+            if not download_url or not save_path:
+                return ToolResponse(success=False, error="download_url and save_path are required")
+            
+            task_path = self.get_task_path(task_id, workspace_path)
+            full_save_path = task_path / save_path
+            
+            # 确保目录存在
+            full_save_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 下载文件
+            response = await self.download_file(download_url, full_save_path)
+            if not response.success:
+                return response
+            
+            return ToolResponse(
+                success=True,
+                data={
+                    "downloaded_file": str(full_save_path),
+                    "file_size": full_save_path.stat().st_size
+                }
+            )
+        
+        except Exception as e:
+            return ToolResponse(success=False, error=str(e))
+    async def download_file(self, url: str, save_path: Path) -> ToolResponse:
+        """下载文件的辅助方法"""
+        import aiohttp
+        
+        try:
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/115.0 Safari/537.36"
+                ),
+                "Accept": "*/*",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+            }
+
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        return ToolResponse(success=False, error=f"下载失败，HTTP状态码: {response.status}")
+                    
+                    with open(save_path, 'wb') as f:
+                        content = await response.read()
+                        f.write(content)
+            
+            return ToolResponse(success=True)
+        
+        except Exception as e:
+            return ToolResponse(success=False, error=f"下载过程中发生错误: {str(e)}")
