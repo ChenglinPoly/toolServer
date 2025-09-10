@@ -659,12 +659,12 @@ class FileCopyTool(LocalTool):
         except Exception as e:
             return ToolResponse(success=False, error=str(e))
         
-class FileDownloadTool(LocalTool):
+class FileURLDownloadTool(LocalTool):
     """文件下载工具"""
     
     def __init__(self):
         super().__init__()
-        self.tool_name = "file_download"
+        self.tool_name = "download_file_from_url"
         self.description = "下载文件到本地"
     
     @bypass_lock_check
